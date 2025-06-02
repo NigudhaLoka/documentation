@@ -68,11 +68,11 @@ This document details the HTTP API endpoints exposed by the legacy `anonymous.se
 
 The service used hardcoded VAPID keys for web push notifications.
 
-* **Public Key**: `[HARDCODED_PUBLIC_VAPID_KEY_VALUE_HERE]` (Actual value was hardcoded in index.js)
+* **Public Key**
    
-* **Private Key**: `[HARDCODED_PRIVATE_VAPID_KEY_VALUE_HERE]` (Actual value was hardcoded in index.js)
+* **Private Key**
    
-* **Mailto**: `[HARDCODED_Mailto_VALUE_HERE]` (Actual value was hardcoded in index.js)
+* **Mailto**
    
 
 **Security Note**: Hardcoding these keys, especially the private VAPID key, is a security risk.
