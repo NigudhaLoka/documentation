@@ -1,0 +1,92 @@
+graph TD
+    %% --- Actors ---
+    UserWeb[("User via Web Browser")]
+    UserMobile[("User via Mobile App")]
+
+    %% --- External Services (Mentioned or Implied) ---
+    Cloudflare[("Cloudflare (WAF/CDN - Optional Front)")]
+    CaptchaService[("External Captcha Service")]
+    NotificationService[("External Notification Service <br/> (e.g., FCM, APNS for Push Notifications)")]
+    %% Note: Snapshot storage (e.g., S3) is implied if snapshots are persisted, but not detailed in requirements.
+
+    %% --- NigūḍhaLoka Platform Components ---
+    subgraph "NigūḍhaLoka Platform"
+        direction TB
+
+        subgraph "Client Tier (Public Repositories)"
+            direction LR
+            FrontendWeb["frontend-web <br/> (Next.js, Tailwind CSS)"]
+            FrontendMobile["frontend-mobile <br/> (e.g., React Native/Flutter)"]
+        end
+
+        subgraph "Gateway Tier (Private Repository)"
+            GatewayPHP["gateway-php <br/> (PHP Intermediary Layer)"]
+        end
+
+        subgraph "Backend API Tier (Private Repository)"
+            direction TB
+            BackendAPI["backend-api <br/> (Node.js/Express.js - Core Business Logic, JWT Authority)"]
+            SnapshotWorker["Snapshot Generation Worker <br/> (Async process, likely part of or managed by backend-api)"]
+        end
+
+        subgraph "Database Tier (New Databases)"
+            direction TB
+            MySQL_NigudhaLoka["MySQL <br/> (Core Auth Details, Snapshot Queue/Status)"]
+            NoSQL_NigudhaLoka["NoSQL (MongoDB/Firebase) <br/> (User Profiles, Metadata)"]
+            ThreadDB_NigudhaLoka["Specialized Thread Database <br/> (Threaded Discussion Content)"]
+        end
+    end
+
+    %% --- Interactions ---
+
+    %% User Interaction with Client Applications
+    UserWeb -- "Interacts" --> FrontendWeb
+    UserMobile -- "Interacts" --> FrontendMobile
+
+    %% Client Applications to Gateway (Potentially through Cloudflare)
+    FrontendWeb -- "HTTPS Requests" --> Cloudflare
+    FrontendMobile -- "HTTPS Requests" --> Cloudflare
+    Cloudflare -- "Forwards Requests" --> GatewayPHP
+    %% Direct connection if Cloudflare is not used:
+    %% FrontendWeb -- "HTTPS Requests" --> GatewayPHP
+    %% FrontendMobile -- "HTTPS Requests" --> GatewayPHP
+
+    %% GatewayPHP Interactions
+    GatewayPHP -- "1. Initial Captcha Validation" --> CaptchaService
+    GatewayPHP -- "2. Forwards Validated Client Requests (with JWT)" --> BackendAPI
+    GatewayPHP -- "Manages Snapshot Queue (CRUD)" --> MySQL_NigudhaLoka
+
+    %% BackendAPI Interactions
+    BackendAPI -- "Validates JWT" --> BackendAPI
+    %% Internal logic for JWT validation
+    BackendAPI -- "Password Hashing, Core Auth Logic (e.g., on user creation)" --> MySQL_NigudhaLoka
+    BackendAPI -- "User Profile & Metadata CRUD" --> NoSQL_NigudhaLoka
+    BackendAPI -- "Threaded Discussions CRUD (Topics, Replies)" --> ThreadDB_NigudhaLoka
+    BackendAPI -- "Triggers Asynchronous Snapshot Generation" --> SnapshotWorker
+    BackendAPI -- "Manages User Notifications (triggers)" --> NotificationService
+
+    %% Snapshot Worker Interactions
+    SnapshotWorker -- "Reads data for snapshot (e.g., from ThreadDB)" --> ThreadDB_NigudhaLoka
+    %% or BackendAPI updates it
+    SnapshotWorker -- "Updates snapshot status (e.g., in MySQL via BackendAPI or directly)" --> MySQL_NigudhaLoka
+
+    %% Notification Service Interactions
+    NotificationService -- "Delivers Push Notifications" --> UserWeb
+    NotificationService -- "Delivers Push Notifications" --> UserMobile
+
+    %% --- Styling (Optional) ---
+    classDef user fill:#E0BBE4,stroke:#333,stroke-width:2px;
+    classDef clientapp fill:#D1E8E2,stroke:#333,stroke-width:2px; %% Light teal
+    classDef gateway fill:#A2D2FF,stroke:#333,stroke-width:2px; %% Light blue
+    classDef backend fill:#FFDAB9,stroke:#333,stroke-width:2px; %% Peach
+    classDef worker fill:#FFC8A2,stroke:#333,stroke-width:2px; %% Lighter Peach
+    classDef db fill:#BDE2B9,stroke:#333,stroke-width:2px; %% Light green
+    classDef external fill:#F0F0F0,stroke:#333,stroke-width:2px;
+
+    class UserWeb,UserMobile user;
+    class FrontendWeb,FrontendMobile clientapp;
+    class GatewayPHP gateway;
+    class BackendAPI backend;
+    class SnapshotWorker worker;
+    class MySQL_NigudhaLoka,NoSQL_NigudhaLoka,ThreadDB_NigudhaLoka db;
+    class Cloudflare,CaptchaService,NotificationService external;
