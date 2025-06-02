@@ -1,0 +1,83 @@
+graph TD
+    %% Define Actors and External Services
+    User[("User via Web Browser")]
+    ExternalPushServices[("External Web Push Services <br/> (e.g., FCM, APNS)")]
+
+    %% Main PHP Application Subgraph
+    subgraph "Legacy Anonymous PHP Application (Monolithic)"
+        direction TB
+
+        %% Client-facing part of the PHP monolith
+        BrowserClientUI["Client-Side Components <br/> (Browser: Server-Rendered HTML, CSS, JavaScript, Client-Side Service Worker Logic)"]
+
+        subgraph "Server-Side PHP Components"
+            direction TB
+            WebServerPHP["Web Server <br/> (e.g., Apache/Nginx with PHP Module)"]
+            PHPBackend["PHP Application Logic <br/> (APIs v1-v3, OOP Classes: Authentication, Event, Mail; Session Mgmt)"]
+            PHPCronJobs["PHP Cron Jobs <br/> (Captcha Cleanup, Email Notifications, Verification Email Sending)"]
+        end
+
+        subgraph "PHP App Databases"
+            direction LR
+            MySQLDB["MySQL Database (Primary) <br/> (anonymous_users, anonymous_events, anonymous_replies, anonymous_captcha, anonymous_login_information)"]
+            MongoDBMail["MongoDB (Secondary for Mail Class) <br/> (Mail-related data/logs - PHP App v2/v3)"]
+        end
+    end
+
+    %% Anonymous Service Worker Subgraph (Separate Application)
+    subgraph "anonymous.service-worker (Node.js - Hosted Externally, e.g., Heroku)"
+        direction TB
+        AnonymousServiceWorkerApp["Node.js/Express Application <br/> API Endpoints: POST /subscribe, POST /sendNotification <br/> Hardcoded VAPID & DB Credentials"]
+        NodeJSCronJobsSW["Node.js Cron Jobs (in Service Worker App) <br/> (Reminder Notifications, DB Cleanup for SW Mails & Device Notifications)"]
+        MongoDBServiceWorker["MongoDB for Service Worker <br/> (Collections: device_notifications, mails)"]
+    end
+
+    %% --- Interactions ---
+
+    %% User Flow & Main Application Interactions
+    User -- "HTTP/S Requests" --> WebServerPHP
+    WebServerPHP -- "Serves Pages / Handles API calls via" --> PHPBackend
+    PHPBackend -- "Renders HTML / Returns API Data to" --> WebServerPHP
+    PHPBackend -- "CRUD Operations" --> MySQLDB
+    PHPBackend -- "Mail Data Operations (v2/v3)" --> MongoDBMail
+    
+    %% Client-Side Logic Interactions
+    BrowserClientUI -- "Renders content received from" --> WebServerPHP
+    BrowserClientUI -- "Client-Side API calls (e.g., AJAX, Fetch) to" --> WebServerPHP
+    
+    %% PHP Cron Jobs Interactions
+    PHPCronJobs -- "Executes Scheduled Tasks (via OS Scheduler on Server)" --> PHPBackend
+    PHPCronJobs -- "Direct DB Maintenance/Tasks" --> MySQLDB
+
+    %% Push Notifications Flow
+    %% 1. Subscription
+    BrowserClientUI -- "Registers for Push Notifications (Client-Side Service Worker JS calls /subscribe API)" --> AnonymousServiceWorkerApp
+    AnonymousServiceWorkerApp -- "Stores/Updates Push Subscription" --> MongoDBServiceWorker
+    
+    %% 2. Sending Notification (Often triggered by an action in the PHP App)
+    PHPBackend -- "Initiates Push Notification (HTTP API Call to /sendNotification)" --> AnonymousServiceWorkerApp
+    AnonymousServiceWorkerApp -- "Fetches Target User Subscriptions" --> MongoDBServiceWorker
+    AnonymousServiceWorkerApp -- "Sends Push Messages via" --> ExternalPushServices
+    ExternalPushServices -- "Delivers Push Notification to User's Device via" --> BrowserClientUI
+    %% BrowserClientUI is where the notification is ultimately handled/displayed by the browser/OS
+
+    %% Service Worker Cron Jobs Interactions
+    NodeJSCronJobsSW -- "Executes Scheduled Tasks (within Node.js app)" --> AnonymousServiceWorkerApp
+    NodeJSCronJobsSW -- "Direct DB Maintenance/Tasks" --> MongoDBServiceWorker
+
+    %% --- Styling (Optional, for better visual distinction) ---
+    classDef user fill:#E0BBE4,stroke:#333,stroke-width:2px;
+    classDef clientcomp fill:#D3E0DC,stroke:#333,stroke-width:2px;
+    classDef servercomp fill:#A2D2FF,stroke:#333,stroke-width:2px;
+    classDef db fill:#BDE2B9,stroke:#333,stroke-width:2px;
+    classDef cron fill:#FFFACD,stroke:#333,stroke-width:2px;
+    classDef external fill:#F0F0F0,stroke:#333,stroke-width:2px;
+    classDef service fill:#FFD8B1,stroke:#333,stroke-width:2px;
+
+    class User user;
+    class BrowserClientUI clientcomp;
+    class WebServerPHP,PHPBackend servercomp;
+    class PHPCronJobs,NodeJSCronJobsSW cron;
+    class MySQLDB,MongoDBMail,MongoDBServiceWorker db;
+    class AnonymousServiceWorkerApp service;
+    class ExternalPushServices external;
