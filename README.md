@@ -29,7 +29,7 @@ NigūḍhaLoka will be accessible via:
 
 ## 4. Architecture Overview
 
-NigūḍhaLoka employs a multi-repository, microservices-inspired architecture to enhance modularity, scalability, and maintainability.
+NigūḍhaLoka employs a multi-repository, microservices-inspired architecture built on the **Firebase** platform to enhance modularity, scalability, and maintainability.
 
 ### 4.1. Repository Structure
 
@@ -38,7 +38,7 @@ The project is organized into the following dedicated repositories within the 'N
 * **`frontend-web` (Public):** Houses the Next.js and Tailwind CSS codebase for the web application.
 * **`frontend-mobile` (Public):** Will contain the chosen mobile framework (e.g., React Native or Flutter) for both Android and iOS applications.
 * **`gateway-php` (Private):** A PHP-based intermediary layer.
-* **`backend-api` (Private):** The core Node.js/Express.js API (the "Actual API").
+* **`backend-api` (Private):** The core **Python** API (the "Actual API"), likely using a modern framework like **FastAPI**.
 * **`documentation` (Public):** Contains all project documentation, including this README, architectural diagrams, API specifications, and style guides.
 
 ### 4.2. Key Architectural Components & Flow
@@ -47,36 +47,38 @@ The project is organized into the following dedicated repositories within the 'N
 2.  **PHP Intermediary Layer (`gateway-php`):**
     * Acts as a front-facing API gateway, potentially fronted by services like Cloudflare for enhanced security (DDoS protection, WAF).
     * Performs initial request validation, including captcha verification.
-    * Manages specific tasks like the snapshot generation queue (interacting with MySQL for queue status).
     * Forwards legitimate requests to the `backend-api`. It is the only service authorized to communicate directly with the `backend-api` (firewall rules based on IP).
     * Handles JWTs, passing them to the `backend-api` for validation and user context.
-3.  **Core API (`backend-api` - Node.js with Express.js):**
+3.  **Core API (`backend-api` - Python):**
     * Contains the primary business logic for NigūḍhaLoka.
-    * Manages user authentication (JWT validation, password hashing).
-    * Interacts with the various databases (MySQL, NoSQL, Thread DB) for data persistence and retrieval.
-    * Handles asynchronous processes (e.g., notification delivery, actual snapshot generation).
+    * Manages user authentication by validating JWTs and interfacing with **Firebase Authentication**.
+    * Interacts with **Firebase services (Firestore, Realtime Database, Cloud Storage)** for all data persistence and retrieval.
+    * Handles asynchronous processes via **Cloud Functions** (e.g., notification delivery, actual snapshot generation).
 
-### 4.3. Databases
+### 4.3. Backend Platform & Databases
 
-* **MySQL:**
-    * Stores core authentication details (e.g., user emails, hashed passwords).
-    * Manages the snapshot generation queue and status (primarily via `gateway-php`).
-* **NoSQL (e.g., MongoDB/Firebase):**
-    * Stores user profiles, application metadata, and other non-relational data.
-* **Thread Database:**
-    * A specialized database solution chosen for its efficiency in handling deeply threaded content and complex read/write patterns typical of discussion forums.
+The backend is built on the **Firebase** platform, which provides our core infrastructure and databases:
+
+* **Firebase Authentication:** Manages all user registration, login, and session management, providing a secure and scalable identity solution.
+* **Firestore:** The primary NoSQL database for storing user profiles, application metadata, and topic information.
+* **Google Cloud Storage for Firebase:** Used for storing all user-generated media, such as images for topics and the generated shareable snapshots.
+* **Firebase Realtime Database / Firestore:** The nested, threaded discussion content will be stored here, leveraging real-time capabilities to create a dynamic user experience.
+* **MySQL (via gateway-php):** May be used for specific, isolated tasks managed by the PHP gateway, such as a dedicated queue for snapshot jobs.
 
 ## 5. Technology Stack Summary
 
+* **Hosting & Backend Services:** **Firebase**
 * **Frontend Web:** Next.js, Tailwind CSS
 * **Frontend Mobile:** To be decided (e.g., React Native, Flutter)
 * **Gateway Layer:** PHP
-* **Backend API:** Node.js, Express.js
+* **Backend API:** **Python (FastAPI recommended)**
 * **Databases:**
-    * MySQL
-    * MongoDB (or similar NoSQL like Firebase Firestore)
-    * Specialized Thread Database (e.g., a graph database, or a relational/NoSQL DB optimized for hierarchical data)
-* **Authentication:** JSON Web Tokens (JWTs), with `backend-api` as the issuing and validation authority.
+    * **Firebase Authentication**
+    * **Firestore** (for profiles, metadata)
+    * **Firebase Realtime Database / Firestore** (for threads)
+    * **Google Cloud Storage** (for media)
+    * **MySQL** (for gateway-specific tasks)
+* **Authentication:** JSON Web Tokens (JWTs), issued and validated via the `backend-api` and Firebase Authentication.
 * **Containerization (Recommended):** Docker, Kubernetes for deployment and scaling.
 
 ## 6. Project Status
@@ -91,7 +93,7 @@ NigūḍhaLoka represents a significant architectural and functional leap from t
 
 * **Rich Threaded Discussions:** Moving beyond a simple question/reply model to complex, nested conversations.
 * **Tiered Moderation:** Introducing more granular control over content.
-* **Modern Technology Stack:** Leveraging Next.js, Node.js, and specialized databases for better performance, scalability, and developer experience.
+* **Modern Technology Stack:** Leveraging **Python**, Next.js, and the integrated **Firebase platform** for better performance, scalability, and developer experience.
 * **Enhanced Security Model:** A dedicated gateway, JWT-based authentication, and a clear separation of concerns aim to provide a more secure platform.
 * **Scalability:** The new architecture is designed with scalability in mind to handle a growing user base and content volume.
 
