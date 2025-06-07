@@ -1,0 +1,56 @@
+graph TD
+    subgraph "User Layer"
+        User(["<br><b>User</b><br>Interacts with<br>Web/Mobile App"])
+    end
+
+    subgraph "Client Applications"
+        direction LR
+        WebApp["<br><b>frontend-web</b><br>Next.js & Tailwind"]
+        MobileApp["<br><b>frontend-mobile</b><br>React Native / Flutter"]
+    end
+
+    subgraph "Gateway & Security"
+        direction TB
+        Cloudflare["<br><b>Cloudflare</b><br>DDoS, WAF"]
+        Gateway["<br><b>gateway-php</b><br>PHP Intermediary<br>Captcha Validation"]
+    end
+
+    subgraph "Core Backend Services"
+        direction TB
+        BackendAPI["<br><b>backend-api</b><br>Python (FastAPI)<br>Core Business Logic"]
+    end
+
+    subgraph "Data & Storage Platform (Firebase & MySQL)"
+        direction LR
+        FirebasePlatform[("<b>Firebase Platform</b>")]
+        MySQLDB["<br><b>MySQL Database</b><br>Snapshot Queue<br>Gateway-specific tasks"]
+    end
+    
+    subgraph FirebasePlatform
+        direction TB
+        FirebaseAuth["<br><b>Firebase Authentication</b><br>User Identity"]
+        Firestore["<br><b>Firestore</b><br>Profiles, Metadata, Threads"]
+        CloudStorage["<br><b>Cloud Storage</b><br>Media & Snapshots"]
+        CloudFunctions["<br><b>Cloud Functions</b><br>Async Tasks<br>(e.g., Snapshot Generation)"]
+    end
+
+    %% Defining Connections
+    User --> WebApp
+    User --> MobileApp
+    
+    WebApp -- "HTTP/S Requests" --> Cloudflare
+    MobileApp -- "HTTP/S Requests" --> Cloudflare
+    
+    Cloudflare --> Gateway
+    Gateway -- "Forwards Validated Requests (w/ JWT)" --> BackendAPI
+    Gateway -- "Manages Snapshot Queue" --> MySQLDB
+
+    BackendAPI -- "Handles Logic & Data Operations" --> FirebasePlatform
+    
+    subgraph "Backend to Firebase Interactions"
+        direction TB
+        BackendAPI -- "Uses" --> FirebaseAuth
+        BackendAPI -- "Uses" --> Firestore
+        BackendAPI -- "Reads/Writes to" --> CloudStorage
+        BackendAPI -- "Triggers / Is deployed as" --> CloudFunctions
+    end
