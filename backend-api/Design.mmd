@@ -1,0 +1,66 @@
+graph TD
+    subgraph "Gateway & Security"
+        Gateway["gateway-php"]
+    end
+
+    subgraph "Core Backend"
+        BackendAPI["backend-api (Python/FastAPI)"]
+    end
+
+    subgraph "Data & Storage"
+        subgraph "Firebase"
+            FirebaseAuth["Firebase Auth"]
+            Firestore["Firestore DB"]
+            CloudStorage["Cloud Storage"]
+        end
+        subgraph "QueueDB"
+            MySQL["MySQL DB"]
+            NotificationQueue[("notification_queue")]
+            ShareableQueue[("shareable_queue")]
+        end
+    end
+
+    subgraph "Async Workers"
+        CloudFunctions["Cloud Functions Worker"]
+        GatewayWorker["Gateway Notification Worker"]
+    end
+
+    subgraph "External"
+        PushService["Push Notification Service"]
+    end
+
+    %% --- FLOW DESCRIPTIONS ---
+    %% The gateway forwards validated API calls to the core backend.
+    Gateway -- "ForwardsAPICall" --> BackendAPI
+
+    %% The backend API uses Firebase Auth to manage users.
+    BackendAPI -- "ManagesUsers" --> FirebaseAuth
+
+    %% When a new thread/reply is posted, the backend writes to Firestore
+    %% and then enqueues a notification job in the MySQL queue.
+    BackendAPI -- "WritesThread_1" --> Firestore
+    BackendAPI -- "EnqueuesNotifyJob_2" --> NotificationQueue
+
+    %% When a shareable image is requested, the backend enqueues a job.
+    BackendAPI -- "EnqueuesShareableJob" --> ShareableQueue
+
+    %% The Gateway's notification worker processes the notification queue.
+    %% 1. It polls for jobs.
+    %% 2. It gets the user's push token from Firestore.
+    %% 3. It sends the notification via the external push service.
+    GatewayWorker -- "Polls_1" --> NotificationQueue
+    GatewayWorker -- "GetsToken_2" --> Firestore
+    GatewayWorker -- "SendsPush_3" --> PushService
+
+    %% The Cloud Functions worker processes the shareable image queue.
+    %% 1. It polls for jobs.
+    %% 2. It reads the necessary thread data from Firestore.
+    %% 3. It saves the final generated image to Cloud Storage.
+    CloudFunctions -- "Polls_1" --> ShareableQueue
+    CloudFunctions -- "ReadsData_2" --> Firestore
+    CloudFunctions -- "SavesImage_3" --> CloudStorage
+    
+    %% --- STRUCTURAL CONNECTIONS ---
+    Gateway -- "RunsWorker" --> GatewayWorker
+    NotificationQueue -- "in" --> MySQL
+    ShareableQueue -- "in" --> MySQL

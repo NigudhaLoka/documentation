@@ -1,321 +1,96 @@
+
 # NigūḍhaLoka - Backend API Service
 
-## Overview
+## 1. Overview
 
-This document outlines the API endpoints for the `backend-api` service of the NigūḍhaLoka platform. The `backend-api` is the core Node.js/Express.js application responsible for all business logic, user authentication (JWT-based), database interactions (MySQL for authentication, NoSQL for profiles/metadata, and a specialized Thread Database for discussions), and asynchronous processes.
+This document outlines the API endpoints for the `backend-api` service of the NigūḍhaLoka platform. The `backend-api` is the core **Python/FastAPI** application that serves as the central logic engine for the entire platform. It is responsible for all business logic, data persistence with Firebase, and management of asynchronous tasks.
 
-It serves as the "Actual API" that the `gateway-php` layer communicates with.
+This service is the internal "Actual API" and is designed to only accept requests from the `gateway-php` layer, which handles public-facing traffic and initial validation like Captcha.
 
-## API Endpoints
+## 2. Technology Stack
 
-All endpoints are relative to the base URL of the `backend-api` service.
+* **Framework**: **Python 3** with **FastAPI**.
+* **Primary Database**: **Google Firestore** is used for storing user profiles, all discussion content (threads and replies), and push notification subscription tokens.
+* **Authentication**: **Firebase Authentication** for user identity and **JSON Web Tokens (JWTs)** for securing API endpoints.
+* **File Storage**: **Google Cloud Storage for Firebase** for user-uploaded media and generated shareable images.
+* **Asynchronous Tasks**: **Google Cloud Functions** for background processing.
+* **Queue & Mail Database**: **MySQL** is used for two specific tasks: as a job queue for image generation requests and to store and manage notification jobs.
 
-### I. Authentication (`/auth`)
+## 3. API Endpoint Classification
 
-Handles user registration, login, JWT issuance and validation, and password management.
+All requests to these endpoints must be authenticated using a JWT, unless otherwise specified.
 
-* **`POST /auth/signup`**
-    * **Purpose:** Register a new user.
-    * **Request Body:**
-        ```json
-        {
-          "email": "user@example.com",
-          "password": "securePassword123",
-          "username": "newuser",
-          "displayName": "New User"
-        }
-        ```
-    * **Response (Success 201):** User information (excluding sensitive data).
-    * **Notes:** Handles password hashing.
+### 3.1. Authentication (`/auth`)
 
-* **`POST /auth/signin`**
-    * **Purpose:** Log in an existing user.
-    * **Request Body:**
-        ```json
-        {
-          "loginIdentifier": "user@example.com", // or "username"
-          "password": "securePassword123"
-        }
-        ```
-    * **Response (Success 200):**
-        ```json
-        {
-          "accessToken": "your_access_token",
-          "refreshToken": "your_refresh_token"
-        }
-        ```
+*Manages user accounts, sessions, and credentials.*
 
-* **`POST /auth/refresh-token`**
-    * **Purpose:** Obtain a new access token using a refresh token.
-    * **Request Body:**
-        ```json
-        {
-          "refreshToken": "your_refresh_token"
-        }
-        ```
-    * **Response (Success 200):**
-        ```json
-        {
-          "accessToken": "new_access_token"
-        }
-        ```
+* **`POST /auth/signup`**: Register a new user.
+* **`POST /auth/signin`**: Authenticate a user and issue JWTs.
+* **`POST /auth/refresh-token`**: Issue a new access token using a refresh token.
+* **`POST /auth/logout`**: Log out a user.
+* **`POST /auth/change-password`**: Updates the user's password. This endpoint is used after the `gateway-php` layer has handled the necessary user verification steps.
+* **`POST /auth/generate-verification-email`**: Generates the content for a verification email and saves it to the MySQL database. The `gateway-php` service is responsible for actually sending the email.
 
-* **`POST /auth/logout`**
-    * **Purpose:** Log out a user (e.g., invalidate refresh token).
-    * **Response (Success 200):** Success message.
-    * **Notes:** Requires `accessToken` for identifying the session to invalidate.
+### 3.2. User Management (`/users`)
 
-* **`POST /auth/forgot-password`**
-    * **Purpose:** Initiate the password reset process.
-    * **Request Body:**
-        ```json
-        {
-          "email": "user@example.com"
-        }
-        ```
-    * **Response (Success 200):** Success message.
+*Manages user-specific data.*
 
-* **`POST /auth/reset-password`**
-    * **Purpose:** Set a new password using a reset token.
-    * **Request Body:**
-        ```json
-        {
-          "token": "password_reset_token_from_email",
-          "newPassword": "newSecurePassword456"
-        }
-        ```
-    * **Response (Success 200):** Success message.
+* **`GET /users/me`**: Retrieve the profile of the currently authenticated user.
+* **`PUT /users/me`**: Update the profile of the currently authenticated user.
 
-* **`POST /auth/verify-email`**
-    * **Purpose:** Verify a user's email address using a verification token/code.
-    * **Request Body:**
-        ```json
-        {
-          "token": "email_verification_token_from_email"
-        }
-        ```
-    * **Response (Success 200):** Success message.
+### 3.3. Thread Management (`/threads`)
 
-* **`POST /auth/resend-verification-email`**
-    * **Purpose:** Resend the email verification link/code.
-    * **Request Body:**
-        ```json
-        {
-          "email": "user@example.com"
-        }
-        ```
-    * **Response (Success 200):** Success message.
+*Handles the core functionality of creating and retrieving discussion threads and their replies. A thread with a `parentId` is a reply.*
 
-### II. User Profile (`/profile`)
+* **`POST /threads`**: Create a new thread (either a top-level topic or a reply). This action also triggers the creation of a notification job in the MySQL queue.
+* **`GET /threads/topics`**: List all initial threads (topics). Supports pagination and sorting.
+* **`GET /threads/{threadId}`**: Retrieve a single thread's data.
+* **`GET /threads/{threadId}/thread`**: Retrieve a full discussion with nested replies.
+* **`PUT /threads/{threadId}`**: Update a thread's content (creator or moderator only).
+* **`DELETE /threads/{threadId}`**: Delete a thread (creator or moderator only).
 
-Manages data for the authenticated user.
+### 3.4. Social Shareables
 
-* **`GET /profile/me`**
-    * **Purpose:** Retrieve the profile of the currently authenticated user.
-    * **Response (Success 200):** User profile data (e.g., `userId`, `username`, `displayName`, `email`, custom profile fields).
+*Manages the creation of shareable images from discussion threads for social media.*
 
-* **`PUT /profile/me`**
-    * **Purpose:** Update the profile of the currently authenticated user.
-    * **Request Body:** Updatable profile fields (e.g., `displayName`, custom fields).
-        ```json
-        {
-          "displayName": "Updated Name"
-        }
-        ```
-    * **Response (Success 200):** Updated user profile data.
+* **`POST /threads/{threadId}/create-shareable`**: A user-facing endpoint to request the generation of an image from a specific thread. This action creates a job in the MySQL queue.
 
-### III. Posts (Discussions & Replies) (`/posts`)
+### 3.5. Notifications (`/notifications`)
 
-Manages content creation and retrieval. A "post" can be an initial topic starter or a reply to another post, differentiated by the presence or absence of a `parentId`.
+*Handles retrieving a user's notification history. Note: The sending of notifications is handled by the `gateway-php` layer.*
 
-* **`POST /posts`**
-    * **Purpose:** Create a new post (topic or reply).
-    * **Request Body:**
-        ```json
-        {
-          "content": "This is the main text of the post.",
-          "parentId": "optional_parent_post_id_if_reply" // Omit or null for a new topic
-        }
-        ```
-    * **Response (Success 201):** Created post data (including `postId`, `content`, `parentId`, `authorId`, `createdAt`).
+* **`GET /notifications`**: Get the notification history for the authenticated user for display within the application.
 
-* **`GET /posts`**
-    * **Purpose:** List initial posts (topic starters).
-    * **Query Parameters:** `page` (number), `limit` (number), `sortBy` (e.g., `createdAt`, `lastActivity`), `order` (e.g., `asc`, `desc`).
-    * **Response (Success 200):** Paginated list of initial posts.
+## 4. Notification Architecture
 
-* **`GET /posts/{postId}`**
-    * **Purpose:** Retrieve a specific post.
-    * **Response (Success 200):** Post data.
+To ensure scalability and cost-effectiveness, the notification system is decoupled across multiple services.
 
-* **`GET /posts/{postId}/thread`**
-    * **Purpose:** Retrieve a specific post and its reply thread.
-    * **Query Parameters:** `page` (number, for paginating replies), `limit` (number, replies per page), `depth` (number, how many levels of replies to fetch).
-    * **Response (Success 200):** Post data along with its nested replies.
+1.  **Client (Browser/Mobile)**: The client application is responsible for requesting a push subscription from the end user's device.
+2.  **`gateway-php` (Dispatcher & Sender)**:
+    * Exposes **`POST /notifications/subscribe`** and **`POST /notifications/unsubscribe`** endpoints.
+    * It receives subscription tokens from the client and stores them in the user's profile in **Firestore**.
+    * It runs a dedicated **Notification Worker** script that polls the MySQL `notifications` queue, retrieves jobs, and sends the actual push notifications via a service like Firebase Cloud Messaging (FCM).
+3.  **`backend-api` (Trigger)**:
+    * This service is responsible for business logic that **triggers** a notification.
+    * When a relevant event occurs (e.g., a new reply is posted), this API creates a "notification job" in the **MySQL queue**. This job contains the `userId` of the recipient and the notification payload.
 
-* **`PUT /posts/{postId}`**
-    * **Purpose:** Update a post's content (by its creator or a moderator).
-    * **Request Body:**
-        ```json
-        {
-          "content": "Updated content of the post."
-        }
-        ```
-    * **Response (Success 200):** Updated post data.
+## 5. Asynchronous Tasks & Cron Jobs
 
-* **`DELETE /posts/{postId}`**
-    * **Purpose:** Delete a post (by its creator or a moderator).
-    * **Response (Success 200 or 204):** Success message or no content.
+Several critical processes are handled asynchronously by scheduled workers.
 
-* **`POST /posts/{postId}/disable`**
-    * **Purpose:** Disable a post (moderation action by creator or moderator).
-    * **Response (Success 200):** Success message.
+1.  **Shareable Image Worker**: A Cloud Function that checks the MySQL queue for pending image generation jobs, creates the images, and saves them to Cloud Storage.
+2.  **Reminder Notification Trigger**: A scheduled cron job within the `backend-api` that identifies inactive users and adds notification jobs for them to the MySQL queue. The legacy application had a similar cron for sending reminder notifications.
+3.  **Stale Data Cleanup**: A daily cron job that cleans up old data, such as completed jobs in the MySQL queues. The legacy application also had cron jobs for cleaning up old data like captcha entries and notification subscriptions.
 
-* **`POST /posts/{postId}/enable`**
-    * **Purpose:** Re-enable a disabled post (moderation action by creator or moderator).
-    * **Response (Success 200):** Success message.
+## 6. Future Enhancements
 
-### IV. Moderation (`/admin` and `/reports`)
+* **Moderation**: A comprehensive suite of moderation tools is planned. This includes endpoints for admins and topic creators to manage content and users. Due to the complexity of handling permissions (admin-only vs. no-auth access for reporting), this functionality has been deferred to a later stage.
+* **Automated Social Posting**: The "Social Shareables" feature may be enhanced to automatically post highly-rated threads to social media platforms like Reddit based on community engagement metrics.
 
-Handles content reporting and administrative moderation actions. User-level moderation (editing/deleting own posts, topic creator moderating their thread) is handled via the `/posts` endpoints with appropriate authorization logic.
+## 7. Developer Notes
 
-* **`POST /reports`**
-    * **Purpose:** Allow users to report a post.
-    * **Request Body:**
-        ```json
-        {
-          "postId": "reported_post_id",
-          "reason": "Reason for reporting."
-        }
-        ```
-    * **Response (Success 201):** Report submission confirmation.
+*This section is for capturing in-progress thoughts, decisions, and tasks. As the project develops, update the notes here. This information will be used as a reference to inform future updates to this README and the overall architecture.*
 
-* **`GET /admin/reports`** (Admin Only)
-    * **Purpose:** List reported posts for admin review.
-    * **Query Parameters:** `page`, `limit`, `status` (e.g., `pending`, `resolved`).
-    * **Response (Success 200):** Paginated list of reports.
-
-* **`POST /admin/reports/{reportId}/action`** (Admin Only)
-    * **Purpose:** Admin takes action on a report.
-    * **Request Body:**
-        ```json
-        {
-          "action": "dismiss_report | disable_post | warn_user", // etc.
-          "remarks": "Admin comments."
-        }
-        ```
-    * **Response (Success 200):** Action confirmation.
-
-* **`GET /admin/users`** (Admin Only)
-    * **Purpose:** List users for administrative purposes.
-    * **Query Parameters:** `page`, `limit`, `searchQuery`.
-    * **Response (Success 200):** Paginated list of users.
-
-* **`PUT /admin/users/{userId}/status`** (Admin Only)
-    * **Purpose:** Admin updates a user's status (e.g., ban, suspend, verify).
-    * **Request Body:**
-        ```json
-        {
-          "status": "active | banned | suspended",
-          "reason": "Reason for status change."
-        }
-        ```
-    * **Response (Success 200):** Confirmation.
-
-### V. Snapshot Generation (`/snapshots` and `/posts`)
-
-Manages requests for and status of shareable snapshots of posts/threads.
-
-* **`POST /posts/{postId}/request-snapshot`**
-    * **Purpose:** User requests a snapshot of a specific post or its thread.
-    * **Request Body:** (Optional parameters for snapshot customization)
-        ```json
-        {
-          "format": "image" // or "gif"
-        }
-        ```
-    * **Response (Success 202):**
-        ```json
-        {
-          "jobId": "snapshot_job_id"
-        }
-        ```
-    * **Notes:** This initiates an asynchronous snapshot generation process.
-
-* **`GET /snapshots/{jobId}/status`**
-    * **Purpose:** Client polls for the status of a snapshot generation request.
-    * **Response (Success 200):**
-        ```json
-        {
-          "jobId": "snapshot_job_id",
-          "status": "pending | processing | completed | failed",
-          "snapshotUrl": "url_to_snapshot_if_completed_or_null"
-        }
-        ```
-
-### VI. User Notifications (`/notifications`)
-
-Manages user notifications and push notification subscriptions.
-
-* **`GET /notifications`**
-    * **Purpose:** Retrieve notifications for the authenticated user.
-    * **Query Parameters:** `page`, `limit`, `unreadOnly` (boolean).
-    * **Response (Success 200):** Paginated list of notifications.
-
-* **`POST /notifications/mark-read`**
-    * **Purpose:** Mark specific notifications as read.
-    * **Request Body:**
-        ```json
-        {
-          "notificationIds": ["id1", "id2"]
-        }
-        ```
-    * **Response (Success 200):** Success message.
-
-* **`POST /notifications/mark-all-read`**
-    * **Purpose:** Mark all notifications for the user as read.
-    * **Response (Success 200):** Success message.
-
-* **`POST /notifications/subscribe`**
-    * **Purpose:** Subscribe the user's device for push notifications.
-    * **Request Body:** Push subscription object from the browser/client.
-    * **Response (Success 201):** Success message.
-
-* **`POST /notifications/unsubscribe`**
-    * **Purpose:** Unsubscribe the user's device from push notifications.
-    * **Request Body:** Push subscription endpoint or identifier.
-    * **Response (Success 200):** Success message.
-
-## Authentication
-
-All requests to protected endpoints must include a JWT `accessToken` in the `Authorization` header using the `Bearer` scheme:
-
-`Authorization: Bearer <your_access_token>`
-
-## Error Handling
-
-The API will use standard HTTP status codes to indicate success or failure. Error responses will typically be in JSON format:
-
-```json
-{
-  "error": {
-    "message": "A descriptive error message.",
-    "code": "ERROR_CODE_IF_APPLICABLE" // Optional application-specific error code
-  }
-}
-```
-
-Common Status Codes:
-* `200 OK`: Request successful.
-* `201 Created`: Resource successfully created.
-* `202 Accepted`: Request accepted for processing (e.g., async tasks).
-* `204 No Content`: Request successful, no content to return.
-* `400 Bad Request`: Invalid request payload or parameters.
-* `401 Unauthorized`: Authentication failed or token missing/invalid.
-* `403 Forbidden`: Authenticated user does not have permission to access the resource.
-* `404 Not Found`: Resource not found.
-* `500 Internal Server Error`: An unexpected error occurred on the server.
-
-## Further Development
-
-This document outlines the initial set of planned endpoints. As development progresses, new endpoints may be added, and existing ones may be refined. API versioning may be introduced in the future if significant breaking changes are required.
+* *_(Example) Decision 2025-06-16: Decided against using WebSockets for real-time updates in v1 due to complexity. Will rely on client-side polling for now.*
+* *_(Example) To-Do: Need to finalize the exact payload structure for the MySQL notification jobs.*
+* *_(Example) To-Do: Benchmark Firestore query performance for deeply nested threads.*
